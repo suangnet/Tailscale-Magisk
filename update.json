@@ -1,0 +1,6 @@
+{
+  "version": "v1.10.0",
+  "versionCode": 11000,
+  "zipUrl": "https://github.com/suangnet/Tailscale-Magisk/releases/download/v1.10.0/tailscale-release.zip",
+  "changelog": "https://raw.githubusercontent.com/suangnet/Tailscale-Magisk/main/changelog.md"
+}

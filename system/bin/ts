@@ -1,0 +1,11 @@
+#!/system/bin/sh
+
+# Path Module
+MOD_DIR="/data/adb/modules/tailscale"
+
+# Native CLI Socket & Binary Path
+TS_SOCKET="$MOD_DIR/var/run/tailscaled.sock"
+CLI_BIN="$MOD_DIR/bin/tailscale"
+
+# Run Pointing to Correct Socket
+exec $CLI_BIN --socket="$TS_SOCKET" "$@"

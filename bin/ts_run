@@ -1,0 +1,123 @@
+#!/system/bin/sh
+
+# Setup Path
+MODPATH=$(dirname "$0")/..
+BIN_DIR="$MODPATH/bin"
+VAR_DIR="$MODPATH/var"
+
+# Essential Data Dir
+STATE_DIR="$VAR_DIR/state"
+RUN_DIR="$VAR_DIR/run"
+LOG_DIR="$VAR_DIR/log"
+CACHE_DIR="$VAR_DIR/cache"
+
+# File Paths
+LOG_FILE="$LOG_DIR/tailscale.log"
+PID_FILE="$VAR_DIR/run/tailscale.pid"
+TS_SOCKET="$RUN_DIR/tailscaled.sock"
+TS_STATE="$STATE_DIR/tailscaled.state"
+
+# Binaries
+DAEMON_BIN="$BIN_DIR/tailscaled"
+
+# Check Busybox
+if [ -f "/data/adb/magisk/busybox" ]; then
+    BUSYBOX="/data/adb/magisk/busybox"
+else
+    BUSYBOX="busybox"
+fi
+SETUIDGID="$BUSYBOX setuidgid"
+
+# Environment Fix (Mandatory for Android)
+export XDG_CACHE_HOME="$CACHE_DIR"
+export XDG_CONFIG_HOME="$VAR_DIR/config"
+export XDG_DATA_HOME="$VAR_DIR/data"
+export TMPDIR="$VAR_DIR/tmp"
+
+# Smart PID Check
+check_pid_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if [ -d "/proc/$pid" ]; then
+            local cmdline=$(cat /proc/$pid/cmdline 2>/dev/null)
+            if echo "$cmdline" | grep -q "tailscaled"; then
+                return 0
+            fi
+        fi
+        rm -f "$PID_FILE"
+    fi
+    return 1
+}
+
+# Start Function
+start_ts() {
+    mkdir -p "$STATE_DIR" "$RUN_DIR" "$LOG_DIR" "$CACHE_DIR" "$VAR_DIR/config" "$VAR_DIR/data" "$VAR_DIR/tmp"
+
+    if check_pid_running; then
+        echo "[INFO] Tailscale Daemon is already running (PID: $(cat $PID_FILE))"
+        exit 0
+    fi
+
+    rm -f "$TS_SOCKET"
+    killall tailscaled > /dev/null 2>&1
+
+    echo "🚀 Starting Tailscale Daemon..."
+    echo "[INFO] Starting Tailscale Daemon..." >> "$LOG_FILE"
+
+    # RUN DAEMON
+    nohup $DAEMON_BIN \
+        --state="$TS_STATE" \
+        --socket="$TS_SOCKET" \
+        --port=41641 \
+        --tun=userspace-networking \
+        --socks5-server=localhost:1055 \
+        >> "$LOG_FILE" 2>&1 &
+
+    echo $! > "$PID_FILE"
+    
+    sleep 2
+
+    if check_pid_running; then
+        echo "✅ Tailscale STARTED"
+        echo "   PID    : $(cat $PID_FILE)"
+        echo "   Socket : $TS_SOCKET"
+        echo "   Log    : $LOG_FILE"
+        echo "[INFO] Daemon STARTED successfully (PID: $(cat $PID_FILE))" >> "$LOG_FILE"
+    else
+        echo "❌ Tailscale FAILED to start"
+        echo "   Cek detail error in: $LOG_FILE"
+        echo "[ERR] Daemon FAILED to start." >> "$LOG_FILE"
+    fi
+}
+
+# Stop Function
+stop_ts() {
+    if [ -f "$PID_FILE" ]; then
+        kill -9 $(cat "$PID_FILE") 2>/dev/null
+        rm -f "$PID_FILE"
+        rm -f "$TS_SOCKET"
+        echo "❌ Tailscale Daemon stopped"
+        echo "[INFO] Tailscale Daemon stopped." >> "$LOG_FILE"
+    else
+        killall tailscaled > /dev/null 2>&1
+        echo "[INFO] Cleaned up processes." >> "$LOG_FILE"
+    fi
+}
+
+# Status Function
+status_ts() {
+    if check_pid_running; then
+        echo "✅ Tailscale is RUNNING"
+        echo "   PID : $(cat $PID_FILE)"
+    else
+        echo "❌ Tailscale is STOPPED"
+    fi
+}
+
+case "$1" in
+    -s|start) start_ts ;;
+    -k|stop)  stop_ts ;;
+    -r|restart) stop_ts; sleep 1; start_ts ;;
+    -t|status) status_ts ;;
+    *) echo "Usage: $0 [-s|start] [-k|stop] [-r|restart] [-t|status]" ;;
+esac
