@@ -1,6 +1,6 @@
 id=tailscale
 name=Tailscale Daemon
-version=v1.10.0
-versionCode=11000
+version=v1.1.1
+versionCode=10101
 author=suangnet
 description=Standalone Tailscale Daemon (Userspace Mode) for Android (Magisk).
