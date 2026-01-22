@@ -4,3 +4,4 @@ version=v1.2.0
 versionCode=10200
 author=suangnet
 description=Standalone Tailscale Daemon (Userspace Mode) for Android.
+updateJson=https://raw.githubusercontent.com/suangnet/Tailscale-Magisk/main/update.json
