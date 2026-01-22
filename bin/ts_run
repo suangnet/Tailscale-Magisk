@@ -19,16 +19,22 @@ TS_STATE="$STATE_DIR/tailscaled.state"
 
 # Binaries
 DAEMON_BIN="$BIN_DIR/tailscaled"
+CLI_BIN="$BIN_DIR/tailscale"
 
-# Check Busybox
+# Detect Busybox (Magisk/KernelSU/APatch)
 if [ -f "/data/adb/magisk/busybox" ]; then
 	BUSYBOX="/data/adb/magisk/busybox"
+elif [ -f "/data/adb/ksu/bin/busybox" ]; then
+	BUSYBOX="/data/adb/ksu/bin/busybox"
+elif [ -f "/data/adb/ap/bin/busybox" ]; then
+	BUSYBOX="/data/adb/ap/bin/busybox"
 else
 	BUSYBOX="busybox"
 fi
+
 SETUIDGID="$BUSYBOX setuidgid"
 
-# Environment Fix (Mandatory for Android)
+# Environment Fix (Android)
 export XDG_CACHE_HOME="$CACHE_DIR"
 export XDG_CONFIG_HOME="$VAR_DIR/config"
 export XDG_DATA_HOME="$VAR_DIR/data"
@@ -108,9 +114,28 @@ stop_ts() {
 status_ts() {
 	if check_pid_running; then
 		echo "✅ Tailscale is RUNNING"
-		echo "   PID : $(cat $PID_FILE)"
+		echo "   PID  : $(cat $PID_FILE)"
+
+		if [ -f "$CLI_BIN" ]; then
+			local ts_ip=$($CLI_BIN --socket="$TS_SOCKET" ip -4 2>/dev/null)
+
+			if [ -n "$ts_ip" ]; then
+				echo "   IP   : $ts_ip"
+				#local state=$($CLI_BIN --socket="$TS_SOCKET" status --json | grep -o '"BackendState":"[^"]*"' | cut -d'"' -f4)
+				#echo "   STATE: $state"
+			else
+				echo "   IP   : (Not Logged In / Auth Required)"
+				echo "   CMD  : tailscale up"
+			fi
+		else
+			echo "   IP   : (CLI binary 'tailscale' not found in bin/)"
+		fi
+
 	else
 		echo "❌ Tailscale is STOPPED"
+		if [ -f "$PID_FILE" ]; then
+			rm -f "$PID_FILE"
+		fi
 	fi
 }
 
