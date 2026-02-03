@@ -1,19 +1,20 @@
 #!/system/bin/sh
 
 # Setup Path
-MODPATH=$(dirname "$0")/..
+MODPATH="/data/adb/modules/tailscale"
 BIN_DIR="$MODPATH/bin"
 VAR_DIR="$MODPATH/var"
 
-# Essential Data Dir
-STATE_DIR="$VAR_DIR/state"
+# Variabel Path
 RUN_DIR="$VAR_DIR/run"
+STATE_DIR="$VAR_DIR/state"
 LOG_DIR="$VAR_DIR/log"
 CACHE_DIR="$VAR_DIR/cache"
+TMP_DIR="$VAR_DIR/tmp"
 
 # File Paths
 LOG_FILE="$LOG_DIR/tailscale.log"
-PID_FILE="$VAR_DIR/run/tailscale.pid"
+PID_FILE="$RUN_DIR/tailscale.pid"
 TS_SOCKET="$RUN_DIR/tailscaled.sock"
 TS_STATE="$STATE_DIR/tailscaled.state"
 
@@ -21,121 +22,119 @@ TS_STATE="$STATE_DIR/tailscaled.state"
 DAEMON_BIN="$BIN_DIR/tailscaled"
 CLI_BIN="$BIN_DIR/tailscale"
 
-# Detect Busybox (Magisk/KernelSU/APatch)
+# Detect Busybox Path
 if [ -f "/data/adb/magisk/busybox" ]; then
 	BUSYBOX="/data/adb/magisk/busybox"
 elif [ -f "/data/adb/ksu/bin/busybox" ]; then
 	BUSYBOX="/data/adb/ksu/bin/busybox"
-elif [ -f "/data/adb/ap/bin/busybox" ]; then
-	BUSYBOX="/data/adb/ap/bin/busybox"
-else
-	BUSYBOX="busybox"
-fi
+else BUSYBOX="busybox"; fi
 
-SETUIDGID="$BUSYBOX setuidgid"
-
-# Environment Fix (Android)
+# Environment Variables
+export HOME="$VAR_DIR"
 export XDG_CACHE_HOME="$CACHE_DIR"
 export XDG_CONFIG_HOME="$VAR_DIR/config"
 export XDG_DATA_HOME="$VAR_DIR/data"
-export TMPDIR="$VAR_DIR/tmp"
+export TMPDIR="$TMP_DIR"
+export TS_DEBUG_FIREWALL_MODE=nop
 
-# Smart PID Check
 check_pid_running() {
 	if [ -f "$PID_FILE" ]; then
 		local pid=$(cat "$PID_FILE")
 		if [ -d "/proc/$pid" ]; then
-			local cmdline=$(cat /proc/$pid/cmdline 2>/dev/null)
-			if echo "$cmdline" | grep -q "tailscaled"; then
-				return 0
-			fi
+			return 0
 		fi
 		rm -f "$PID_FILE"
 	fi
 	return 1
 }
 
-# Start Function
 start_ts() {
-	mkdir -p "$STATE_DIR" "$RUN_DIR" "$LOG_DIR" "$CACHE_DIR" "$VAR_DIR/config" "$VAR_DIR/data" "$VAR_DIR/tmp"
+	mkdir -p "$RUN_DIR" "$STATE_DIR" "$LOG_DIR" "$CACHE_DIR" "$TMP_DIR" "$VAR_DIR/config" "$VAR_DIR/data"
 
 	if check_pid_running; then
-		echo "[INFO] Tailscale Daemon is already running (PID: $(cat $PID_FILE))"
+		echo "✅ Tailscale Already RUNNING (PID: $(cat $PID_FILE))"
 		exit 0
 	fi
 
-	rm -f "$TS_SOCKET"
-	killall tailscaled >/dev/null 2>&1
+	rm -f "$TS_SOCKET" 2>/dev/null
+
+	$BUSYBOX killall tailscaled >/dev/null 2>&1
 
 	echo "🚀 Starting Tailscale Daemon..."
-	echo "[INFO] Starting Tailscale Daemon..." >>"$LOG_FILE"
+	echo "[INFO] Starting daemon..." >"$LOG_FILE"
 
-	# RUN DAEMON
+	# Run tailscaled
 	nohup $DAEMON_BIN \
 		--state="$TS_STATE" \
 		--socket="$TS_SOCKET" \
 		--port=41641 \
 		--tun=userspace-networking \
 		--socks5-server=localhost:1055 \
+		--outbound-http-proxy-listen=localhost:3838 \
 		>>"$LOG_FILE" 2>&1 &
 
 	echo $! >"$PID_FILE"
 
-	sleep 2
+	sleep 3
 
 	if check_pid_running; then
-		echo "✅ Tailscale STARTED"
+		echo "✅ Tailscale STARTED successfully"
 		echo "   PID    : $(cat $PID_FILE)"
 		echo "   Socket : $TS_SOCKET"
-		echo "   Log    : $LOG_FILE"
-		echo "[INFO] Daemon STARTED successfully (PID: $(cat $PID_FILE))" >>"$LOG_FILE"
-	else
-		echo "❌ Tailscale FAILED to start"
-		echo "   Cek detail error in: $LOG_FILE"
-		echo "[ERR] Daemon FAILED to start." >>"$LOG_FILE"
-	fi
-}
-
-# Stop Function
-stop_ts() {
-	if [ -f "$PID_FILE" ]; then
-		kill -9 $(cat "$PID_FILE") 2>/dev/null
-		rm -f "$PID_FILE"
-		rm -f "$TS_SOCKET"
-		echo "❌ Tailscale Daemon stopped"
-		echo "[INFO] Tailscale Daemon stopped." >>"$LOG_FILE"
-	else
-		killall tailscaled >/dev/null 2>&1
-		echo "[INFO] Cleaned up processes." >>"$LOG_FILE"
-	fi
-}
-
-# Status Function
-status_ts() {
-	if check_pid_running; then
-		echo "✅ Tailscale is RUNNING"
-		echo "   PID  : $(cat $PID_FILE)"
 
 		if [ -f "$CLI_BIN" ]; then
-			local ts_ip=$($CLI_BIN --socket="$TS_SOCKET" ip -4 2>/dev/null)
-
-			if [ -n "$ts_ip" ]; then
-				echo "   IP   : $ts_ip"
-				#local state=$($CLI_BIN --socket="$TS_SOCKET" status --json | grep -o '"BackendState":"[^"]*"' | cut -d'"' -f4)
-				#echo "   STATE: $state"
-			else
-				echo "   IP   : (Not Logged In / Auth Required)"
-				echo "   CMD  : tailscale up"
-			fi
-		else
-			echo "   IP   : (CLI binary 'tailscale' not found in bin/)"
+			$CLI_BIN --socket="$TS_SOCKET" set --accept-dns=false --accept-routes=false >/dev/null 2>&1
 		fi
 
 	else
-		echo "❌ Tailscale is STOPPED"
-		if [ -f "$PID_FILE" ]; then
-			rm -f "$PID_FILE"
+		echo "❌ Tailscale FAILED to start"
+		echo "   Check Log: $LOG_FILE"
+		tail -n 5 "$LOG_FILE"
+	fi
+}
+
+stop_ts() {
+	if [ -f "$PID_FILE" ]; then
+		PID=$(cat "$PID_FILE")
+		echo "🛑 Stopping Tailscale (PID: $PID)..."
+		kill -15 "$PID" 2>/dev/null
+		rm -f "$PID_FILE"
+	fi
+
+	$BUSYBOX killall tailscaled >/dev/null 2>&1
+
+	rm -f "$TS_SOCKET" 2>/dev/null
+
+	echo "❌ Tailscale STOPPED successfully"
+}
+
+status_ts() {
+	if check_pid_running; then
+		echo "✅ Tailscale is RUNNING (PID: $(cat $PID_FILE))"
+
+		if [ -f "$CLI_BIN" ]; then
+			# Cek IP via CLI
+			local ip=$($CLI_BIN --socket="$TS_SOCKET" ip -4 2>/dev/null)
+			if [ -n "$ip" ]; then
+				echo "   IP     : $ip"
+				echo "   Mode   : Userspace"
+				echo "   Proxy  : SOCKS5 (Port 1055)"
+			else
+				echo "   Status : Login Required / Not Connected"
+				echo "   Cmd    : sh $0 login"
+			fi
 		fi
+	else
+		echo "❌ Tailscale is STOPPED"
+	fi
+}
+
+login_ts() {
+	if check_pid_running; then
+		echo "🔗 Initiating Login..."
+		$CLI_BIN --socket="$TS_SOCKET" up --accept-dns=false --accept-routes=false
+	else
+		echo "⚠️ Start the service first!"
 	fi
 }
 
@@ -148,5 +147,6 @@ case "$1" in
 	start_ts
 	;;
 -t | status) status_ts ;;
-*) echo "Usage: $0 [-s|start] [-k|stop] [-r|restart] [-t|status]" ;;
+-l | login) login_ts ;;
+*) echo "Usage: $0 {start|stop|restart|status|login}" ;;
 esac

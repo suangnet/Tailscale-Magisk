@@ -1,0 +1,19 @@
+#!/system/bin/sh
+
+# Setup Path
+MOD_DIR="/data/adb/modules/tailscale"
+VAR_DIR="$MOD_DIR/var"
+
+# Environment Variables
+export HOME="$VAR_DIR"
+export XDG_CACHE_HOME="$VAR_DIR/cache"
+export XDG_CONFIG_HOME="$VAR_DIR/config"
+export XDG_DATA_HOME="$VAR_DIR/data"
+export TMPDIR="$VAR_DIR/tmp"
+
+# Defintion Binaries & Socket
+CLI_BIN="$MOD_DIR/bin/tailscale"
+TS_SOCKET="$VAR_DIR/run/tailscaled.sock"
+
+# Execute Tailscale CLI
+exec $CLI_BIN --socket="$TS_SOCKET" "$@"
