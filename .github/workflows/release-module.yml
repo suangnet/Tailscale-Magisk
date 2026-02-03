@@ -1,6 +1,7 @@
 name: Build & Release Tailscale Module
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*" # Trigger by tag (Ex: v1.1.0)
