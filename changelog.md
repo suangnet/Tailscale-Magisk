@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.2
+
+- Remove duplicate legacy CLI binary (reduce zip size ~29MB).
+- Use symlinked `tailscaled` for CLI commands for compatibility.
+- Fix update checking issue for Magisk OTA.
+
 ## v1.4.1
 
 - Fix tailscale up hanging in interactive terminal.

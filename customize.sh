@@ -35,8 +35,10 @@ esac
 ui_print "- Extracting binaries for $ARCH..."
 
 cp -f "$MODPATH/files/$ARCH_DIR/tailscaled" "$MODPATH/bin/tailscaled"
-cp -f "$MODPATH/files/$ARCH_DIR/tailscale" "$MODPATH/bin/tailscale"
 rm -rf "$MODPATH/files"
+
+ui_print "- Creating tailscale CLI symlink..."
+ln -s "$MODPATH/bin/tailscaled" "$MODPATH/bin/tailscale"
 
 ui_print "- Set permission files..."
 
