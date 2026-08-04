@@ -23,11 +23,17 @@ DAEMON_BIN="$BIN_DIR/tailscaled"
 CLI_BIN="$BIN_DIR/tailscale"
 
 # Detect Busybox Path
-if [ -f "/data/adb/magisk/busybox" ]; then
+if [ -x "/data/adb/magisk/busybox" ]; then
 	BUSYBOX="/data/adb/magisk/busybox"
-elif [ -f "/data/adb/ksu/bin/busybox" ]; then
+elif [ -x "/data/adb/ksu/bin/busybox" ]; then
 	BUSYBOX="/data/adb/ksu/bin/busybox"
-else BUSYBOX="busybox"; fi
+elif [ -x "/data/adb/ap/bin/busybox" ]; then
+	BUSYBOX="/data/adb/ap/bin/busybox"
+elif [ -x "/system/xbin/busybox" ]; then
+	BUSYBOX="/system/xbin/busybox"
+else
+	BUSYBOX=$(which busybox)
+fi
 
 # Environment Variables
 export HOME="$VAR_DIR"
@@ -39,8 +45,8 @@ export TS_DEBUG_FIREWALL_MODE=nop
 
 check_pid_running() {
 	if [ -f "$PID_FILE" ]; then
-		local pid=$(cat "$PID_FILE")
-		if [ -d "/proc/$pid" ]; then
+		local pid=$(cat "$PID_FILE" 2>/dev/null)
+		if pgrep -f "tailscaled" | grep -q "^${pid}$" 2>/dev/null; then
 			return 0
 		fi
 		rm -f "$PID_FILE"
@@ -50,9 +56,15 @@ check_pid_running() {
 
 start_ts() {
 	mkdir -p "$RUN_DIR" "$STATE_DIR" "$LOG_DIR" "$CACHE_DIR" "$TMP_DIR" "$VAR_DIR/config" "$VAR_DIR/data"
+	mkdir -p /sdcard/Download/Taildrop 2>/dev/null
+
+	if [ -f "$LOG_FILE" ] && [ "$(wc -c <"$LOG_FILE")" -gt 1048576 ]; then
+		mv "$LOG_FILE" "${LOG_FILE}.bak"
+	fi
 
 	if check_pid_running; then
-		echo "✅ Tailscale Already RUNNING (PID: $(cat $PID_FILE))"
+		echo "✅ Tailscale is already RUNNING (PID: $(cat $PID_FILE))"
+		echo "[INFO] Tailscale is already running (PID: $(cat $PID_FILE))" >>"$LOG_FILE"
 		exit 0
 	fi
 
@@ -61,34 +73,37 @@ start_ts() {
 	$BUSYBOX killall tailscaled >/dev/null 2>&1
 
 	echo "🚀 Starting Tailscale Daemon..."
-	echo "[INFO] Starting daemon..." >"$LOG_FILE"
+	echo "[INFO] Starting Tailscale Daemon..." >>"$LOG_FILE"
+
+	if [ ! -c /dev/net/tun ] && [ -c /dev/tun ]; then
+		mkdir -p /dev/net
+		ln -sf /dev/tun /dev/net/tun
+	fi
+
+	# Prevent IPv6 hotspot leak (kernel lacks IP6_NF_NAT)
+	sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1
+	sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
 
 	# Run tailscaled
 	nohup $DAEMON_BIN \
 		--state="$TS_STATE" \
 		--socket="$TS_SOCKET" \
 		--port=41641 \
-		--tun=userspace-networking \
+		--tun=tailscale0 \
 		--socks5-server=localhost:1055 \
 		--outbound-http-proxy-listen=localhost:3838 \
 		>>"$LOG_FILE" 2>&1 &
 
 	echo $! >"$PID_FILE"
-
 	sleep 3
 
 	if check_pid_running; then
-		echo "✅ Tailscale STARTED successfully"
-		echo "   PID    : $(cat $PID_FILE)"
+		echo "✅ Tailscale STARTED successfully (PID: $(cat $PID_FILE))"
+		echo "[INFO] Tailscale STARTED successfully (PID: $(cat $PID_FILE))" >>"$LOG_FILE"
 		echo "   Socket : $TS_SOCKET"
-
-		if [ -f "$CLI_BIN" ]; then
-			$CLI_BIN --socket="$TS_SOCKET" set --accept-dns=false --accept-routes=false >/dev/null 2>&1
-		fi
-
 	else
-		echo "❌ Tailscale FAILED to start"
-		echo "   Check Log: $LOG_FILE"
+		echo "❌ Tailscale FAILED to start. Check details in: $LOG_FILE"
+		echo "[ERROR] Tailscale FAILED to start." >>"$LOG_FILE"
 		tail -n 5 "$LOG_FILE"
 	fi
 }
@@ -106,24 +121,38 @@ stop_ts() {
 	rm -f "$TS_SOCKET" 2>/dev/null
 
 	echo "❌ Tailscale STOPPED successfully"
+	echo "[INFO] Tailscale service stopped." >>"$LOG_FILE"
 }
 
 status_ts() {
 	if check_pid_running; then
-		echo "✅ Tailscale is RUNNING (PID: $(cat $PID_FILE))"
+		local pid=$(cat "$PID_FILE")
+
+		echo "Tailscale is RUNNING"
+		echo "PID    : $pid"
 
 		if [ -f "$CLI_BIN" ]; then
-			# Cek IP via CLI
 			local ip=$($CLI_BIN --socket="$TS_SOCKET" ip -4 2>/dev/null)
 			if [ -n "$ip" ]; then
-				echo "   IP     : $ip"
-				echo "   Mode   : Userspace"
-				echo "   Proxy  : SOCKS5 (Port 1055)"
+				local ram_usage=$(grep -i VmRSS "/proc/$pid/status" 2>/dev/null | awk '{printf "%.1f MB", $2/1024}')
+				[ -z "$ram_usage" ] && ram_usage="-"
+				echo "IP     : $ip"
+				echo "RAM    : $ram_usage"
 			else
-				echo "   Status : Login Required / Not Connected"
-				echo "   Cmd    : sh $0 login"
+				echo "Status : Login Required / Not Connected"
+				echo "Cmd    : sh $0 login"
 			fi
 		fi
+
+		local uptime=$(ps -o etime= -p $pid 2>/dev/null | xargs | awk -F'[-:]' '{
+            if (NF == 4) print $1"d "$2"h "$3"m "$4"s"
+            else if (NF == 3) print $1"h "$2"m "$3"s"
+            else if (NF == 2) print $1"m "$2"s"
+            else print "-"
+        }')
+
+		if [ -z "$uptime" ]; then uptime="-"; fi
+		echo "TIME   : $uptime"
 	else
 		echo "❌ Tailscale is STOPPED"
 	fi
@@ -132,9 +161,9 @@ status_ts() {
 login_ts() {
 	if check_pid_running; then
 		echo "🔗 Initiating Login..."
-		$CLI_BIN --socket="$TS_SOCKET" up --accept-dns=false --accept-routes=false
+		$CLI_BIN --socket="$TS_SOCKET" up
 	else
-		echo "⚠️ Start the service first!"
+		echo "⚠️  Start the service first!"
 	fi
 }
 
@@ -148,5 +177,16 @@ case "$1" in
 	;;
 -t | status) status_ts ;;
 -l | login) login_ts ;;
-*) echo "Usage: $0 {start|stop|restart|status|login}" ;;
+-v | version) $CLI_BIN version ;;
+*)
+	echo "Usage: $0 [option]"
+	echo ""
+	echo "Options:"
+	echo "  -s, start    Start the service"
+	echo "  -k, stop     Stop the service"
+	echo "  -r, restart  Restart the service"
+	echo "  -t, status   Check service status"
+	echo "  -l, login    Login to Tailscale"
+	echo "  -v, version  Show version info"
+	;;
 esac
