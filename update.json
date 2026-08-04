@@ -1,6 +1,6 @@
 {
-  "version": "v1.2.0",
-  "versionCode": 10200,
-  "zipUrl": "https://github.com/suangnet/Tailscale-Magisk/releases/download/v1.2.0/tailscale-magisk-v1.2.0.zip",
-  "changelog": "https://raw.githubusercontent.com/suangnet/Tailscale-Magisk/main/changelog.md"
+  "version": "v1.4.0",
+  "versionCode": 10400,
+  "zipUrl": "https://github.com/suangnet/Tailscale-Magisk/releases/download/v1.4.0/tailscale-magisk-v1.4.0.zip",
+  "changelog": "https://raw.githubusercontent.com/suangnet/Tailscale-Magisk/v1.4.0/changelog.md"
 }
