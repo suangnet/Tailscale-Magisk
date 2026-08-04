@@ -1,7 +1,7 @@
 id=tailscale
 name=Tailscale Daemon
-version=v1.4.0
-versionCode=10400
+version=v1.4.1
+versionCode=10401
 author=suangnet
 description=Standalone Tailscale Daemon for Android.
 updateJson=https://raw.githubusercontent.com/suangnet/Tailscale-Magisk/main/update.json
