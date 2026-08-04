@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.4
+
+- UPDATE REAL BINARIES: Downloaded and replaced legacy `tailscaled` payload with the actual `v1.98.8` binaries for both `arm` and `arm64` architectures. This definitely fixes the interactive stuck login issues caused by version mismatches.
+
 ## v1.4.3
 
 - Remove pre-bundled `tailscaled` from `bin/` directory to avoid redundancy, as it's extracted dynamically during installation.
