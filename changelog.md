@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.3
+
+- Remove pre-bundled `tailscaled` from `bin/` directory to avoid redundancy, as it's extracted dynamically during installation.
+
 ## v1.4.2
 
 - Remove duplicate legacy CLI binary (reduce zip size ~29MB).
