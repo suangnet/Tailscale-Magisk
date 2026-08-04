@@ -85,7 +85,8 @@ start_ts() {
 	sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null 2>&1
 
 	# Run tailscaled
-	nohup $DAEMON_BIN \
+	# Adding TS_DEBUG_FIREWALL_MODE=nop globally on daemon runtime helps avoid stuck routing issues
+	TS_DEBUG_FIREWALL_MODE=nop nohup $DAEMON_BIN \
 		--state="$TS_STATE" \
 		--socket="$TS_SOCKET" \
 		--port=41641 \
@@ -161,7 +162,8 @@ status_ts() {
 login_ts() {
 	if check_pid_running; then
 		echo "🔗 Initiating Login..."
-		$CLI_BIN --socket="$TS_SOCKET" up
+		# We force clear TTY requirement by echoing through the CLI
+		echo | $CLI_BIN --socket="$TS_SOCKET" up --reset
 	else
 		echo "⚠️  Start the service first!"
 	fi
